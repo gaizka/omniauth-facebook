@@ -60,6 +60,11 @@ module OmniAuth
         @raw_info ||= access_token.get('me', info_options).parsed || {}
       end
 
+      # If we have the uid in a canvas signed_request, we don't need to ask /me for that
+      def uid
+        (access_token && access_token.params["user_id"]) || raw_info["id"]
+      end
+
       def info_options
         params = {:appsecret_proof => appsecret_proof}
         params.merge!({:fields => options[:info_fields]}) if options[:info_fields]
