@@ -57,6 +57,11 @@ module OmniAuth
         @raw_info ||= access_token.get('/me').parsed || {}
       end
 
+      # If we have the uid in a canvas signed_request, we don't need to ask /me for that
+      def uid
+        (access_token && access_token.params["user_id"]) || raw_info["id"]
+      end
+
       def build_access_token
         if access_token = request.params["access_token"]
           ::OAuth2::AccessToken.from_hash(
@@ -65,6 +70,7 @@ module OmniAuth
           )
         elsif signed_request_contains_access_token?
           hash = signed_request.clone
+
           ::OAuth2::AccessToken.new(
             client,
             hash.delete('oauth_token'),
