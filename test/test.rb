@@ -476,6 +476,7 @@ module BuildAccessTokenTests
       @payload = {
         'algorithm' => 'HMAC-SHA256',
         'oauth_token' => 'm4c0d3z',
+        'user_id' => '1234',
         'expires' => Time.now.to_i
       }
       @raw_signed_request = signed_request(@payload, @client_secret)
@@ -494,6 +495,7 @@ module BuildAccessTokenTests
       result = strategy.build_access_token
       assert_equal @payload['expires'], result.expires_at
     end
+
   end
 
   class ParamsContainAccessTokenStringTest < TestCase
@@ -509,6 +511,31 @@ module BuildAccessTokenTests
       result = strategy.build_access_token
       assert_kind_of ::OAuth2::AccessToken, result
       assert_equal 'm4c0d3z', result.token
+    end
+  end
+end
+
+class RequestPhaseWithSignedRequestIncludingUserId < StrategyTestCase
+  def setup
+    super
+    @access_token = stub('OAuth2::AccessToken', :params => {"user_id" => "1234"})
+    strategy.stubs(:access_token).returns(@access_token)
+  end
+
+  test 'returns uid without asking at /me url' do
+    assert_equal strategy.uid, "1234"
+  end
+
+  class WhenWeDontHaveUserId < StrategyTestCase
+    def setup
+      super
+      @access_token = stub('OAuth2::AccessToken', :params => {})
+      strategy.stubs(:access_token).returns(@access_token)
+    end
+
+    test 'returns uid by asking at /me url if ' do
+      @access_token.expects(:get).with('/me').returns(stub_everything('OAuth2::Response'))
+      strategy.uid
     end
   end
 end
