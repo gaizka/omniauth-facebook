@@ -66,7 +66,7 @@ module OmniAuth
       end
 
       def info_options
-        params = {:appsecret_proof => appsecret_proof}
+        params = {}
         params.merge!({:fields => options[:info_fields]}) if options[:info_fields]
         params.merge!({:locale => options[:locale]}) if options[:locale]
 
@@ -239,10 +239,6 @@ module OmniAuth
         url.query = Rack::Utils.build_query(query) if query
 
         url.to_s
-      end
-
-      def appsecret_proof
-        @appsecret_proof ||= OpenSSL::HMAC.hexdigest(OpenSSL::Digest::SHA256.new, client.secret, access_token.token)
       end
     end
   end

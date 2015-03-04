@@ -258,12 +258,9 @@ class RawInfoTest < StrategyTestCase
   def setup
     super
     @access_token = stub('OAuth2::AccessToken')
-    @appsecret_proof = 'appsecret_proof'
-    @options = {:appsecret_proof => @appsecret_proof}
   end
 
   test 'performs a GET to https://graph.facebook.com/me' do
-    strategy.stubs(:appsecret_proof).returns(@appsecret_proof)
     strategy.stubs(:access_token).returns(@access_token)
     params = {:params => @options}
     @access_token.expects(:get).with('me', params).returns(stub_everything('OAuth2::Response'))
@@ -273,7 +270,6 @@ class RawInfoTest < StrategyTestCase
   test 'performs a GET to https://graph.facebook.com/me with locale' do
     @options.merge!({ :locale => 'cs_CZ' })
     strategy.stubs(:access_token).returns(@access_token)
-    strategy.stubs(:appsecret_proof).returns(@appsecret_proof)
     params = {:params => @options}
     @access_token.expects(:get).with('me', params).returns(stub_everything('OAuth2::Response'))
     strategy.raw_info
@@ -282,15 +278,13 @@ class RawInfoTest < StrategyTestCase
   test 'performs a GET to https://graph.facebook.com/me with info_fields' do
     @options.merge!({:info_fields => 'about'})
     strategy.stubs(:access_token).returns(@access_token)
-    strategy.stubs(:appsecret_proof).returns(@appsecret_proof)
-    params = {:params => {:appsecret_proof => @appsecret_proof, :fields => 'about'}}
+    params = {:params => {:fields => 'about'}}
     @access_token.expects(:get).with('me', params).returns(stub_everything('OAuth2::Response'))
     strategy.raw_info
   end
 
   test 'returns a Hash' do
     strategy.stubs(:access_token).returns(@access_token)
-    strategy.stubs(:appsecret_proof).returns(@appsecret_proof)
     raw_response = stub('Faraday::Response')
     raw_response.stubs(:body).returns('{ "ohai": "thar" }')
     raw_response.stubs(:status).returns(200)
@@ -304,7 +298,6 @@ class RawInfoTest < StrategyTestCase
 
   test 'returns an empty hash when the response is false' do
     strategy.stubs(:access_token).returns(@access_token)
-    strategy.stubs(:appsecret_proof).returns(@appsecret_proof)
     oauth2_response = stub('OAuth2::Response', :parsed => false)
     params = {:params => @options}
     @access_token.stubs(:get).with('me', params).returns(oauth2_response)
