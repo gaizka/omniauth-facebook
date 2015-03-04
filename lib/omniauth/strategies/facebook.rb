@@ -69,20 +69,35 @@ module OmniAuth
       end
 
       def callback_phase
-        with_authorization_code! do
-          super
-        end
+        super
       rescue NoAuthorizationCodeError => e
         fail!(:no_authorization_code, e)
       rescue UnknownSignatureAlgorithmError => e
         fail!(:unknown_signature_algorithm, e)
       end
 
+      def request_phase
+        if signed_request_contains_access_token?
+          # If we already have an access token, we can just hit the callback URL directly and pass the signed request.
+          params = { :signed_request => raw_signed_request }
+          query = Rack::Utils.build_query(params)
+
+          url = callback_url
+          url << "?" unless url.match(/\?/)
+          url << "&" unless url.match(/[\&\?]$/)
+          url << query
+
+          redirect url
+        else
+          super
+        end
+      end
+
       # NOTE If we're using code from the signed request then FB sets the redirect_uri to '' during the authorize
       #      phase and it must match during the access_token phase:
-      #      https://github.com/facebook/facebook-php-sdk/blob/master/src/base_facebook.php#L477
+      #      https://github.com/facebook/php-sdk/blob/master/src/base_facebook.php#L348
       def callback_url
-        if @authorization_code_from_signed_request_in_cookie
+        if @authorization_code_from_signed_request
           ''
         else
           options[:callback_url] || super
@@ -96,7 +111,7 @@ module OmniAuth
       # You can pass +display+, +scope+, or +auth_type+ params to the auth request, if you need to set them dynamically.
       # You can also set these options in the OmniAuth config :authorize_params option.
       #
-      # For example: /auth/facebook?display=popup
+      # /auth/facebook?display=popup
       def authorize_params
         super.tap do |params|
           %w[display scope auth_type].each do |v|
@@ -109,47 +124,64 @@ module OmniAuth
         end
       end
 
+      # Parse signed request in order, from:
+      #
+      # 1. The request 'signed_request' param (server-side flow from canvas pages) or
+      # 2. A cookie (client-side flow via JS SDK)
+      def signed_request
+        @signed_request ||= raw_signed_request && parse_signed_request(raw_signed_request)
+      end
+
       protected
 
       def build_access_token
-        super.tap do |token|
-          token.options.merge!(access_token_options)
+        if signed_request_contains_access_token?
+          hash = signed_request.clone
+          ::OAuth2::AccessToken.new(
+            client,
+            hash.delete('oauth_token'),
+            hash.merge!(access_token_options.merge(:expires_at => hash.delete('expires')))
+          )
+        else
+          with_authorization_code! { super }.tap do |token|
+            token.options.merge!(access_token_options)
+          end
         end
       end
 
       private
 
-      def signed_request_from_cookie
-        @signed_request_from_cookie ||= raw_signed_request_from_cookie && parse_signed_request(raw_signed_request_from_cookie)
+      def raw_signed_request
+        request.params['signed_request'] || request.cookies["fbsr_#{client.id}"]
       end
 
-      def raw_signed_request_from_cookie
-        request.cookies["fbsr_#{client.id}"]
+      # If the signed_request comes from a FB canvas page and the user has already authorized your application, the JSON
+      # object will be contain the access token.
+      #
+      # https://developers.facebook.com/docs/authentication/canvas/
+      def signed_request_contains_access_token?
+        signed_request && signed_request['oauth_token']
       end
 
       # Picks the authorization code in order, from:
       #
       # 1. The request 'code' param (manual callback from standard server-side flow)
-      # 2. A signed request from cookie (passed from the client during the client-side flow)
+      # 2. A signed request (see #signed_request for more)
       def with_authorization_code!
         if request.params.key?('code')
           yield
-        elsif code_from_signed_request = signed_request_from_cookie && signed_request_from_cookie['code']
+        elsif code_from_signed_request = signed_request && signed_request['code']
           request.params['code'] = code_from_signed_request
-          @authorization_code_from_signed_request_in_cookie = true
-          # NOTE The code from the signed fbsr_XXX cookie is set by the FB JS SDK will confirm that the identity of the
-          #      user contained in the signed request matches the user loading the app.
-          original_provider_ignores_state = options.provider_ignores_state
-          options.provider_ignores_state = true
+          @authorization_code_from_signed_request = true
+          @authorization_code_from_signed_request = true
           begin
             yield
           ensure
             request.params.delete('code')
-            @authorization_code_from_signed_request_in_cookie = false
-            options.provider_ignores_state = original_provider_ignores_state
+            @authorization_code_from_signed_request = false
           end
         else
-          raise NoAuthorizationCodeError, 'must pass either a `code` (via URL or by an `fbsr_XXX` signed request cookie)'
+          raise NoAuthorizationCodeError, 'must pass either a `code` parameter or a signed request (via `signed_request` parameter or a `fbsr_XXX` cookie)'
         end
       end
 
